@@ -1,0 +1,25 @@
+spring:
+  sleuth:
+    sampler:
+      probability: 1.0
+  zipkin:
+    base-url: http://tracing-service:8080
+
+zuul:
+  prefix: /api
+  ignored-services: '*'
+  routes:
+    estoqueservice: /estoque/**
+    pedidoservice: /pedido/**
+  sensitiveHeaders: Cookie,Set-Cookie
+
+hystrix:
+  command:
+    estoqueservice:
+      execution.isolation.thread.timeoutInMilliseconds: 2500
+    pedidoservice:
+      execution.isolation.thread.timeoutInMilliseconds: 3000
+
+estoqueservice:
+  ribbon:
+    ReadTimeout: 8000
