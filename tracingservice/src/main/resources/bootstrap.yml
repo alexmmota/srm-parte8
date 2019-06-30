@@ -6,12 +6,11 @@ spring:
   profiles:
     active:
       dev
-
-management:
-  metrics:
-    web:
-      server:
-        auto-time-requests: false
+  cloud:
+    config:
+      label: parte8
+      enabled: true
+      uri: http://config-server:8080
 
 eureka:
   instance:

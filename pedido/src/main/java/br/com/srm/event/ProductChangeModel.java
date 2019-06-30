@@ -9,7 +9,7 @@ public class ProductChangeModel {
 
     private String type;
     private String action;
-    private String barCode;
+    private String isbn;
     private String correlationId;
 
 }

@@ -1,8 +1,3 @@
-spring:
-  sleuth:
-    sampler:
-      percentage: 1.0
-
 server:
   port: 8080
 spring:
@@ -13,8 +8,12 @@ spring:
       dev
   cloud:
     config:
+      label: parte8
       enabled: true
       uri: http://config-server:8080
+  sleuth:
+    sampler:
+      percentage: 1.0
 
 eureka:
   instance:

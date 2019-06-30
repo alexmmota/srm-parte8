@@ -25,21 +25,21 @@ public class ProductRedisRepositoryImpl implements ProductRedisRepository {
 
     @Override
     public void saveProduct(Product product) {
-        hashOperations.put(HASH_NAME, product.getId(), product);
+        hashOperations.put(HASH_NAME, product.getIsbn(), product);
     }
 
     @Override
     public void updateProduct(Product product) {
-        hashOperations.put(HASH_NAME, product.getId(), product);
+        hashOperations.put(HASH_NAME, product.getIsbn(), product);
     }
 
     @Override
-    public void deleteProduct(String barcCode) {
-        hashOperations.delete(HASH_NAME, barcCode);
+    public void deleteProduct(String isbn) {
+        hashOperations.delete(HASH_NAME, isbn);
     }
 
     @Override
-    public Product findProduct(String barCode) {
-        return (Product) hashOperations.get(HASH_NAME, barCode);
+    public Product findProduct(String isbn) {
+        return (Product) hashOperations.get(HASH_NAME, isbn);
     }
 }

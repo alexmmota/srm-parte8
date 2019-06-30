@@ -2,91 +2,74 @@ package br.com.srm.service;
 
 import br.com.srm.event.SimpleSourceBean;
 import br.com.srm.exception.BusinessServiceException;
-import br.com.srm.model.Product;
+import br.com.srm.model.ProductEntity;
 import br.com.srm.repository.ProductRepository;
-import com.netflix.hystrix.contrib.javanica.annotation.HystrixCommand;
-import org.hibernate.service.spi.ServiceException;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import br.com.srm.utils.UserContextHolder;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.cloud.context.config.annotation.RefreshScope;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
-import java.util.List;
 import java.util.Optional;
 
+@Slf4j
 @Service
+@RefreshScope
 public class ProductService {
-
-    private static Logger logger = LoggerFactory.getLogger(ProductService.class);
 
     @Autowired
     private ProductRepository productRepository;
 
+    @Value("${srm.message.fail}")
+    private String messageFail;
+
     @Autowired
     private SimpleSourceBean simpleSourceBean;
 
-    public Product save(Product product) {
-        logger.info("m=save, product={}", product);
-        if (product.isNew() && productRepository.findByBarCode(product.getBarCode()) != null)
-            throw new BusinessServiceException("Já existe um produto com esse codigo de barra");
-        Product result = productRepository.save(product);
-        simpleSourceBean.publishProductChange("ADD", result.getBarCode());
+    @Transactional
+    public ProductEntity save(ProductEntity product) {
+        log.info("m=save, product={}", product);
+        if (productRepository.findByIsbn(product.getIsbn()) != null)
+            throw new BusinessServiceException("Já existe um produto com esse codigo ISBN");
+        ProductEntity result = productRepository.save(product);
+        simpleSourceBean.publishProductChange("ADD", result.getIsbn());
         return result;
     }
 
-    public Product update(String barCode, Product product) {
-        logger.info("m=update, barCode={}, product={}", barCode, product);
-        Product oldProduct = productRepository.findByBarCode(barCode);
-        product.setId(oldProduct.getId());
-        Product result = productRepository.save(product);
-        simpleSourceBean.publishProductChange("UPDATE", result.getBarCode());
-        return result;
+    public void delete(String isbn) {
+        log.info("m=delete, isbn={}", isbn);
+        productRepository.deleteById(isbn);
+        simpleSourceBean.publishProductChange("DELETE", isbn);
     }
 
-    @HystrixCommand(fallbackMethod = "buildFallbackProductList")
-    public Product findByBarCode(String barCode) {
-        logger.info("m=findByBarCode, barCode={}", barCode);
-        Product product = productRepository.findByBarCode(barCode);
-        if (product == null)
-            throw new BusinessServiceException("Produto não encontrado para esse código de barra ");
-        return product;
-    }
-
-    private Product buildFallbackProductList(String barCode) {
-        Product product = new Product();
-        product.setAmount(0);
-        product.setBarCode("00000-00000");
-        product.setId(0l);
-        product.setName("Ops! Não foi possível buscar seu produto agora!");
-        return product;
-    }
-
-    public void delete(String barCode) {
-        logger.info("m=delete, barCode={}", barCode);
-        productRepository.delete(findByBarCode(barCode));
-    }
-
-    public Product addAmount(String barCode, Integer amount) {
-        logger.info("m=addAmount, barCode={}, amount={}", barCode, amount);
-        Product product = findByBarCode(barCode);
+    public ProductEntity addAmount(String isbn, Integer amount) {
+        log.info("m=addAmount, isbn={}, amount={}", isbn, amount);
+        ProductEntity product = findByISBN(isbn);
         product.setAmount(product.getAmount() + amount);
-        return productRepository.save(product);
+        ProductEntity result = productRepository.save(product);
+        simpleSourceBean.publishProductChange("UPDATE", result.getIsbn());
+        return result;
     }
 
-    public Product subtractAmount(String barCode, Integer amount) {
-        logger.info("m=subtractAmount, barCode={}, amount={}", barCode, amount);
-        Product product = findByBarCode(barCode);
+    public ProductEntity subtractAmount(String isbn, Integer amount) {
+        log.info("m=subtractAmount, isbn={}, amount={}", isbn, amount);
+        ProductEntity product = findByISBN(isbn);
         if (product.getAmount() < amount)
-            throw new ServiceException("Quantidade não está disponível no estoque");
+            throw new BusinessServiceException(messageFail);
         product.setAmount(product.getAmount() - amount);
-        return productRepository.save(product);
+        ProductEntity result = productRepository.save(product);
+        simpleSourceBean.publishProductChange("UPDATE", result.getIsbn());
+        return result;
     }
 
-    private Product findById(Long id) {
-        Optional<Product> product = productRepository.findById(id);
-        if (!product.isPresent())
-            throw new BusinessServiceException("Produto não encontrado para esse id");
-        return product.get();
+    public ProductEntity findByISBN(String isbn) {
+        log.info("m=findByISBN, idbn={}, correlationId={}", isbn, UserContextHolder.getContext().getCorrelationId());
+        Optional<ProductEntity> product = productRepository.findById(isbn);
+        if (product.isPresent())
+            return product.get();
+        return null;
     }
 
 }

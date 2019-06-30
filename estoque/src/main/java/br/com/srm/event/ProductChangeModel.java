@@ -1,7 +1,6 @@
 package br.com.srm.event;
 
 import lombok.AllArgsConstructor;
-import lombok.Builder;
 import lombok.Data;
 
 @Data
@@ -10,7 +9,7 @@ public class ProductChangeModel {
 
     private String type;
     private String action;
-    private String barCode;
+    private String isbn;
     private String correlationId;
 
 }

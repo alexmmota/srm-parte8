@@ -15,11 +15,11 @@ public class SimpleSourceBean {
         this.customChannels = customChannels;
     }
 
-    public void publishProductChange(String action, String barCode) {
+    public void publishProductChange(String action, String isbn) {
         ProductChangeModel productChangeModel = new ProductChangeModel(
                 ProductChangeModel.class.getTypeName(),
                 action,
-                barCode,
+                isbn,
                 UserContextHolder.getContext().getCorrelationId());
 
         customChannels.changeProduct().

@@ -7,6 +7,8 @@ import br.com.srm.model.OrderItem;
 import br.com.srm.client.dto.Product;
 import br.com.srm.repository.OrderRepository;
 import br.com.srm.repository.redis.ProductRedisRepository;
+import br.com.srm.utils.UserContext;
+import br.com.srm.utils.UserContextHolder;
 import brave.Span;
 import brave.Tracer;
 import com.netflix.hystrix.contrib.javanica.annotation.HystrixCommand;
@@ -16,10 +18,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
-import java.util.ArrayList;
-import java.util.Date;
-import java.util.List;
-import java.util.Optional;
+import java.util.*;
 
 @Service
 public class OrderService {
@@ -38,9 +37,11 @@ public class OrderService {
     @Autowired
     private Tracer tracer;
 
-    @HystrixCommand
+    @HystrixCommand(commandProperties = {
+            @HystrixProperty(name = "execution.isolation.thread.timeoutInMilliseconds", value = "5000")})
     public Order create(Order order) {
-        logger.info("m=create, order={}", order);
+        logger.info("m=create, order={}, correlationId={}", order, UserContextHolder.getContext().getCorrelationId());
+        validateItensExists(order);
         order.setCreateDate(new Date());
         order.setStatus(Order.Status.CREATED);
         return orderRepository.save(order);
@@ -52,10 +53,17 @@ public class OrderService {
     }
 
     @HystrixCommand(commandProperties = {
-            @HystrixProperty(name = "execution.isolation.thread.timeoutInMilliseconds",
-                             value = "1000")})
+            @HystrixProperty(name = "execution.isolation.thread.timeoutInMilliseconds", value = "3000")},
+            threadPoolProperties = {
+                    @HystrixProperty(name = "coreSize", value = "3")
+            },
+            fallbackMethod = "fallBackFindByClient")
     public List<Order> findByClient(String cpf) {
         return orderRepository.findByClient_CpfOrderByCreateDateAsc(cpf);
+    }
+
+    public List<Order> fallBackFindByClient(String cpf) {
+        return Collections.EMPTY_LIST;
     }
 
     public Order finish(String id) {
@@ -78,43 +86,32 @@ public class OrderService {
 
     private void validateItens(Order order) {
         for (OrderItem item : order.getItens()) {
-            Product product = findProductByBarCode(item);
+            Product product = findProductByIsbn(item);
             if (product.getAmount() < item.getAmount())
                 throw new BusinessServiceException("Quantidade de produto insuficiente no estoque");
         }
     }
 
-    @HystrixCommand(threadPoolKey = "productByBarCodeThreadPool",
+    @HystrixCommand(threadPoolKey = "productByIsbnThreadPool",
             threadPoolProperties = {
                 @HystrixProperty(name = "coreSize",value="30"),
                 @HystrixProperty(name="maxQueueSize", value="10")})
-    private Product findProductByBarCode(OrderItem item) {
+    private Product findProductByIsbn(OrderItem item) {
         Product product = checkRedisCache(item.getProduct());
         if (product != null)
             return product;
 
-        product = estoqueClient.findByBarCode(item.getProduct());
+        product = estoqueClient.findByIsbn(UserContextHolder.getContext().getAuthToken(),
+                UserContextHolder.getContext().getCorrelationId(),1l, item.getProduct());
         cacheProductObject(product);
         return product;
     }
 
-    private Product checkRedisCache(String barCode) {
-        Span newSpan = tracer.nextSpan().name("readProductDataFromRedis");
-        try (Tracer.SpanInScope ws = tracer.withSpanInScope(newSpan.start())) {
-            return productRedisRepository.findProduct(barCode);
-        } catch (Exception ex){
-            logger.error("Falha ao buscar {}.  Exception {}", barCode, ex);
-            return null;
-        } finally {
-            newSpan.finish();
-        }
-    }
-
-    private void cacheProductObject(Product product) {
+    private void sleep() {
         try {
-            productRedisRepository.saveProduct(product);
-        }catch (Exception ex){
-            logger.error("Falha ao salvar {} no Redis. Exception {}", product.getBarCode(), ex);
+            Thread.sleep(2000);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
         }
     }
 
@@ -126,7 +123,17 @@ public class OrderService {
 
     @HystrixCommand
     private void subtractProductAmount(OrderItem item) {
-        estoqueClient.subtractAmount(item.getProduct(), item.getAmount());
+        estoqueClient.subtractAmount(UserContextHolder.getContext().getAuthToken(),
+                UserContextHolder.getContext().getCorrelationId(),
+                1l, item.getProduct(), item.getAmount());
+    }
+
+    private void validateItensExists(Order order) {
+        for (OrderItem item : order.getItens()) {
+            Product product = findProductByIsbn(item);
+            if (product == null)
+                throw new BusinessServiceException("Produto nao encontrado");
+        }
     }
 
     private Order getOrderById(String id) {
@@ -134,6 +141,26 @@ public class OrderService {
         if (!optionalOrder.isPresent())
             throw new BusinessServiceException("Pedido não encontrado");
         return optionalOrder.get();
+    }
+
+    private Product checkRedisCache(String isbn) {
+        Span newSpan = tracer.nextSpan().name("readProductDataFromRedis");
+        try (Tracer.SpanInScope ws = tracer.withSpanInScope(newSpan.start())) {
+            return productRedisRepository.findProduct(isbn);
+        } catch (Exception ex){
+            logger.error("Falha ao buscar {}.  Exception {}", isbn, ex);
+            return null;
+        } finally {
+            newSpan.finish();
+        }
+    }
+
+    private void cacheProductObject(Product product) {
+        try {
+            productRedisRepository.saveProduct(product);
+        }catch (Exception ex){
+            logger.error("Falha ao salvar {} no Redis. Exception {}", product.getIsbn(), ex);
+        }
     }
 
 }
